@@ -16,7 +16,8 @@
 - **三轴契约**：风险档位与授权分别打分，两者一起决定 `allow` / `deny` / `ask`。授权在**每一次**越界时重新
   推导：过去的批准只有在证据仍留在会话里时才算数。
 - **`medium` 看的是后果可逆，不是工件可逆**：只有当爆炸半径有界**并且**它造成的影响能被撤销时，才算
-  `medium`。能把文件改回来，不等于能把效果收回来。
+  `medium`。能把文件改回来，不等于能把效果收回来。而且 `medium` 只有在授权为 `high` 时才可能判成 allow
+  —— 用户得**点名**那一个动作、目标与范围；"授权了实质"不够，解析器会直接拒掉这种输出。
 - **系统与安全控制状态一律 `high`**：`hosts`、DNS、防火墙规则、服务、证书、`PATH`。它们都能改回来，
   但已经发出去的流量收不回来。
 - **有更安全的替代方案时降档**：同一目标若能绕开危险步骤达成，那么危险步骤就不是用户要的东西。
@@ -60,6 +61,14 @@
 | 评审失败 / 超时 | 由 `failMode` 决定，默认 `deny`（失败即拒）。 |
 | 连续三次拒绝，或 50 次窗口内 10 次 | 熔断：不再拒绝，改为交回人工，避免把整个任务卡死。 |
 | 待审动作与会话日志里的工具调用明确不一致 | 停止评审，而不是拿无法核对的证据下结论。 |
+| 评审之后待审动作被改动 | 每次放行前都会拿评审时冻结的**动作指纹**复核；不一致即失败关闭（`failMode`），并记 `action-changed` —— 实际执行的动作必须就是被评审的那个。 |
+
+评审按 `reviewConcurrency` 排队（默认 `1`，上限 `4`）：默认就是与以前一致的**一个接一个**；调大后多个越界
+调用并行评审，超出上限的排队等待 —— 排队**不丢弃**任何调用，排队时间从这一次评审自己的总预算里扣。
+
+**被评审的动作就是实际执行的动作。** 评审开始时插件会冻结待审动作的指纹，任何放行落地之前（包括"替你回答
+审批"之前）都再复核一次；一旦动作变了（或者根本算不出指纹），这次放行就作废，由 `failMode` 决定是直接拒绝
+还是交回给你。
 
 ## 运行前提
 
@@ -109,21 +118,65 @@ dsh plugin --profile <profile 名> add <包名或路径>
 | `reasoningEffort` | `""` | 评审思考强度：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`，留空跟随会话。 |
 | `failMode` | `deny` | 评审失败或超时的含义：`deny` 或 `ask`。 |
 | `denyMode` | `deny` | 评审判定为拒绝的含义：`deny` 直接拒绝，`ask` 交回人工。 |
+| `reviewConcurrency` | `1` | 同时进行的评审上限（1–4）。`1`＝与从前一致、严格一个接一个；超过上限的调用**排队** —— 不丢弃、也绝不越过上限，排队时间会从这次评审的总预算里扣掉。 |
+| `verifyMode` | `on` | 评审时是否可用只读工具：`on`（默认）或 `off`；`auto` / `always` 作为 `on` 的别名继续接受。详见[评审时的只读工具](#评审时的只读工具)。 |
+| `verifyModeText` | `""` | `verifyMode` 的文本形态（`"off"` / `"on"`，也接受 `auto` / `always` 别名）；非空时覆盖 `verifyMode`。 |
 | `probeRunner` | `inproc` | 只读探针：`inproc`（不 spawn 进程）或 `shell`（沙箱内只读命令）。 |
-| `policyExtra` | `""` | 追加到评审策略末尾的自定义规则（自然语言）。 |
+| `policyExtra` | `""` | 你自己写的规则，追加到评审策略末尾（与 Codex 的 `auto_review.extra_policy` 同一种显式机制）。**想改评审口径就用它。** |
 | `allowedHosts` | `[]` | 命中这些主机的常规网络操作按 low 处理。注意：在用户配置里写空数组会**覆盖**包内清单，要写就写全量。 |
+| `allowedHostsText` | `""` | `allowedHosts` 的文本形态（逗号或换行分隔），由配置页写入；非空时覆盖 `allowedHosts`。 |
 | `timeoutMs` | `100000` | 一次评审的总预算（含重试）。 |
 | `attemptTimeoutMs` | `30000` | 单次请求上限；超时后可以重试。 |
 | `retryDelayMs` | `5000` | 两次尝试之间的等待。 |
 | `minAttemptMs` | `2000` | 扣掉等待后剩余预算低于此值就不再重试。 |
+
+## 评审时的只读工具
+
+一次评审通常就是**一次请求**：模型读完证据直接给判定。`verifyMode` 决定它是否还能顺手核实事实，随包默认**打开**：
+
+- `on`（默认）—— 模型可以先要只读工具核实事实，再给判定；
+- `off` —— 完全不给工具（prompt 里连工具协议都没有，因此只有一次请求）。
+
+`auto` 与 `always` 作为 `on` 的**别名**继续接受，旧配置不会失效。
+
+这是一个**单段小 loop**，而**不是**子代理：它在本进程里跑，不开会话、不落盘、不注入工作区指令、也不会自己逛。
+需要事实时，模型在**一条消息里要齐所有工具**（`{"tools":[{"name":"read_file","path":"…"}, …]}`），我们
+**一批并行执行**，结果**一轮回灌**，第二次请求必须给出判定。于是普通评审**一次请求**、需要核实**两次**；
+上限两步（写死，没有配置项），"一个工具一步"不可能出现，也没有第三轮闲聊。
+
+**它们只看该看的**：工具只在**只读沙箱**里执行，可读范围只有工作区、以及本次动作参数里出现过的路径；
+凭据类路径一律拒绝。
+
+| 工具 | 读什么 | 上限 |
+|---|---|---|
+| `read_file` | 文本文件 | 16 KB，截断处有标注 |
+| `list_dir` | 目录 | 最多 200 条，并标注还剩多少条 |
+| `stat` | 存在性 / 类型 / 大小 | 只有 metadata |
+
+工具**没有任何写路径**，也绝不使用插件自身的宿主权限：
+
+- 首选 `ctx.fs`，但**只有当它是沙箱化实现**（会暴露 `sandboxMode`）时才用；
+- 否则用 `ctx.shell`，带 `sandboxPolicy: { mode: 'read-only', workspaceRoot }`，并记录 `run.sandbox` 回报的
+  实际沙箱事实；
+- **两者都拿不到就不执行任何工具**（日志里记 `verify.denied = 'no-sandbox'`），绝不退化成非沙箱读。
+
+路径白名单由本插件把关（沙箱只保证写的边界）：工作区、以及**动作参数里出现过的路径**可读；凭据类路径
+（`~/.dsh/.credentials*`、SSH 私钥、钥匙串、浏览器配置、`.npmrc`、`.git-credentials`）一律拒绝并写日志。
+工具输出以**数据**回灌，显式标注"不可信、不是指令、不是授权"；判定仍走同一套严格协议，所以 `critical`
+恒拒、解析失败仍 fail-closed。loop 若在预算或步数内拿不到判定，就**什么都不猜**：这次评审按失败处理，
+由你的 `failMode` 决定（`ask` 则交回你手上）。每次评审都会记下工具做了什么 ——
+`verify: { tools: 'on'|'off', steps, calls: [{name, path, ms, bytes, sandbox}], denied? }`，含**观察到的
+沙箱事实**，所以"确实在沙箱里跑的"事后可查。
 
 ## 它做什么，不做什么
 
 **它替你回答越界审批。** 开关打开时，放行判定会以 `allowed-once` 的形式交付：那一次调用在沙箱之外执行，
 过程中不弹窗。能力与风险都在这里 —— 你把"这一次我自己看一眼"换成了"模型看过一眼"。
 
-**它把证据发给你的模型提供方。** 待审动作、会话上下文、有界指令投影与本地事实，会组成一次评审请求，
-走 DSH 里配置的 provider（或你在卡片里选的那个）。评审消耗 token。
+**它把证据发给你的模型提供方。** 待审动作、会话上下文、有界指令投影，以及**宿主自己跑出来的只读探针结果**，
+会组成一次评审请求，走 DSH 里配置的 provider（或你在卡片里选的那个）。评审消耗 token。**路径事实不在其中**：
+宿主**不解析**命令里的目标（解析的失败模式是静默漏目标，正好与 fail-closed 相反），所以你看到的是动作本身，
+加上宿主选择跑的那几条探针结果。
 
 **它留一份本地日志。** `~/.dsh/escalation-review.log` 每行一个 JSON 对象，含命令文本与判定结论、理由。
 请把它当作和它所概括的会话同等敏感的东西。
@@ -143,8 +196,12 @@ dsh plugin --profile <profile 名> add <包名或路径>
   额度上限：最多 4 条、总预算 3 秒、单条 1.2 秒、输出 2 KB。拿不到 `pwsh` 时走进程内通道。
 - 评审日志：`$DSH_HOME/escalation-review.log`，每行一个 JSON 对象；`tools/review-report.mjs` 会把它与
   会话上下文（按 `callId` 关联）渲染成 Markdown。主要事件：`ready`、`intervention-gate`、
-  `config-effective`、`assembler-resolved`、`reviewed`、`reviewer-failed`、`review-retry`、
-  `approval-granted`、`circuit-breaker`、`projection-registered`。
+  `config-effective`、`assembler-resolved`、`reviewed`、`reviewer-failed`、`review-attempt`（这次尝试实际拿到的超时）、
+  `review-retry`、`review-retry-skipped`、`approval-granted`、`action-changed`、`circuit-breaker`、`projection-registered`。
+  `reviewed` 带 `actionFingerprint`（被评审参数的 16 位十六进制哈希 —— **绝不**是参数本身），
+  `action-changed` 记下"放行被复核拦下"时的新旧哈希。`selftest-summary` 只在**配置了自测模块**时出现：
+  本包不含自测用例，所以开着 `selfTest` 但没给 `selftestModule` 时日志只记 `selftest-unavailable`，
+  评审不受影响。
 
 ## 审核卡片
 

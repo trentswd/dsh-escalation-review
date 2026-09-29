@@ -20,6 +20,9 @@ The policy follows OpenAI's Codex guardian template
   while its evidence is still in the session.
 - **`medium` means reversible consequences, not a reversible artifact.** A step is medium only when its
   blast radius is bounded *and* what it does can be undone. Editing a file back is not recalling its effect.
+  A `medium` verdict may only come out as `allow` when authorization is `high` — the user explicitly named or
+  approved *that* action, target and scope; "they approved the substance" is not enough, and the output parser
+  rejects it outright.
 - **System and security control state is `high`.** `hosts`, DNS, firewall rules, services, certificates,
   `PATH`. Each can be edited back; traffic already sent cannot be recalled.
 - **A safer alternative downgrades the action.** When the same goal is reachable without the dangerous
@@ -68,6 +71,16 @@ the reviewer covers the gap where DSH would otherwise stop to ask you.
 | Review failed or timed out | `failMode` decides. Default `deny` (fail closed). |
 | Three denials in a row, or 10 within 50 calls | Circuit breaker: the plugin stops refusing and hands the call to you instead. |
 | Pending action disagrees with its logged tool call | The review stops rather than judge evidence it cannot verify. |
+| Pending action changes after it was reviewed | Every allow is re-checked against a fingerprint frozen at review time; a mismatch fails closed (`failMode`) and is logged as `action-changed`, so the action that runs is always the action that was reviewed. |
+
+Reviews are queued by `reviewConcurrency` (default `1`, at most `4`): with the default they run strictly one
+after another, and above it escalations review in parallel while anything past the limit waits — a waiting
+call is never dropped, and the time it waited is charged against that review's own budget.
+
+The reviewed action is the executed action. The plugin freezes a fingerprint of the pending action when the
+review starts and re-checks it before any allow can land — including before the approval is answered on your
+behalf. If the action changed (or cannot be fingerprinted at all), the allow is refused and `failMode` decides
+whether the call is blocked or handed back to you.
 
 ## Requirements
 
@@ -123,13 +136,58 @@ parse failure makes the loader skip the whole bundle silently.
 | `reasoningEffort` | `""` | Reviewer thinking effort: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or empty to follow the session. |
 | `failMode` | `deny` | What a failed or timed-out review means: `deny` or `ask`. |
 | `denyMode` | `deny` | What a deny verdict means: `deny` outright, or `ask` the user. |
+| `reviewConcurrency` | `1` | How many reviews may run at once (1–4). `1` keeps them strictly one after another; above the limit a call queues — nothing is dropped and the limit is never exceeded, and the queue time is charged against that review's total budget. |
+| `verifyMode` | `on` | Whether the reviewer may use read-only tools: `on` (default) or `off`. `auto` / `always` are accepted as aliases for `on`. See [Read-only tools during review](#read-only-tools-during-review). |
+| `verifyModeText` | `""` | Text form of `verifyMode` (`"off"` / `"on"`, plus the `auto` / `always` aliases); non-empty overrides `verifyMode`. |
 | `probeRunner` | `inproc` | Read-only probes: `inproc` (no process spawned) or `shell` (a read-only command inside the sandbox). |
-| `policyExtra` | `""` | Free-form rules appended to the reviewer policy. |
+| `policyExtra` | `""` | Rules you write yourself and append to the reviewer policy (the same explicit route as Codex's `auto_review.extra_policy`). This is the way to change how the reviewer judges. |
 | `allowedHosts` | `[]` | Hosts whose ordinary network access counts as low risk. An empty array in a user file **overrides** the package list, so write the full list if you write the key at all. |
+| `allowedHostsText` | `""` | Text form of `allowedHosts` (comma or newline separated) written by the config page; non-empty overrides `allowedHosts`. |
 | `timeoutMs` | `100000` | Total budget for one review, retries included. |
 | `attemptTimeoutMs` | `30000` | Cap for a single request; a timeout is retried. |
 | `retryDelayMs` | `5000` | Wait between attempts. |
 | `minAttemptMs` | `2000` | Skip a retry when the remaining budget after the delay is below this. |
+
+## Read-only tools during review
+
+A review is normally **one request**: the reviewer reads the evidence and returns its verdict. `verifyMode`
+decides whether it may also check facts, and it ships **on**:
+
+- `on` (default) — the model may ask for read-only tools before deciding;
+- `off` — no tools at all (the tool protocol is not even in the prompt, so the review is one request).
+
+`auto` and `always` are accepted as aliases for `on`, so older configurations keep working.
+
+This is one small loop, **not** a subagent: it runs in this process, opens no session, writes nothing, injects no
+workspace instructions, and cannot wander. When the model wants facts it asks for **all of them in one
+message** (`{"tools":[{"name":"read_file","path":"…"}, …]}`), the tools run **as one batch, in parallel**,
+every result comes back in a single round, and the second request must answer. So a review costs **one
+request** normally and **two** when it needs facts; the ceiling is two steps, "one tool per step" is impossible, and there is no third-round chit-chat.
+
+They see only what the review is allowed to see: the tools run **inside a read-only sandbox** and only the
+workspace plus the paths named in the pending action are readable, while credential paths are refused.
+
+| Tool | Reads | Bound |
+|---|---|---|
+| `read_file` | a text file | 16 KB, truncated with a marker |
+| `list_dir` | a directory | at most 200 entries, with the remainder counted |
+| `stat` | existence, type, size | metadata only |
+
+They have **no write path**, and they never run with the plugin's own host privileges:
+
+- preferred: `ctx.fs`, but only when it is the sandbox-enforcing backend (it advertises `sandboxMode`);
+- otherwise: `ctx.shell` with `sandboxPolicy: { mode: 'read-only', workspaceRoot }`, whose `run.sandbox` reports
+  the sandbox facts that actually applied;
+- **no channel at all: no tool runs** (`verify.denied = 'no-sandbox'` in the log) — never a non-sandboxed read.
+
+Paths are allow-listed by this plugin (the sandbox only guarantees the write boundary): the workspace and paths
+named in the pending action are readable; credential paths (`~/.dsh/.credentials*`, SSH keys, keychains, browser
+profiles, `.npmrc`, `.git-credentials`) are refused and logged. Tool output is fed back as **data** — explicitly
+marked as untrusted, never as instructions or authorization — and the verdict still comes from the same strict
+protocol, so `critical` stays denied and a parse failure still fails closed. If the loop runs out of budget or
+steps without a verdict, nothing is guessed: the review fails and your `failMode` decides (`ask` hands it back to
+you). Every review logs what the tools did — `verify: { tools: 'on'|'off', steps, calls: [{name, path, ms, bytes,
+sandbox}], denied? }` — including the observed sandbox facts, so "it really ran sandboxed" is checkable later.
 
 ## What it does, and what it does not do
 
@@ -138,8 +196,11 @@ answered `allowed-once`: that one call runs outside the sandbox with no prompt. 
 the risk in one — you are trading "I read this one myself" for "a model read it".
 
 **It sends evidence to your model provider.** The pending action, the session context, the bounded
-instruction projection and the local facts go into one review request through the provider configured in
-DSH (or the one you pick in the card). Reviews cost tokens.
+instruction projection and the host's own read-only probe results go into one review request through the
+provider configured in DSH (or the one you pick in the card). Reviews cost tokens. Path facts are **not**
+part of that request: the host does not parse targets out of the command (doing so would silently miss
+targets, which is the opposite of failing closed), so what you see is the action itself plus the probe
+results the host chose to run.
 
 **It keeps a local log.** `~/.dsh/escalation-review.log` holds one JSON object per line, including the
 command text and the verdict with its reason. Treat it as sensitive as the sessions it summarises.
@@ -165,7 +226,13 @@ the plugin can tie to the call it is about.
 - Review log: `$DSH_HOME/escalation-review.log`, one JSON object per line. `tools/review-report.mjs`
   renders it plus the matching session context into Markdown. Key events: `ready`,
   `intervention-gate`, `config-effective`, `assembler-resolved`, `reviewed`, `reviewer-failed`,
-  `review-retry`, `approval-granted`, `circuit-breaker`, `projection-registered`.
+  `review-attempt` (the timeout each attempt actually received), `review-retry`, `review-retry-skipped`,
+  `approval-granted`, `action-changed`, `circuit-breaker`, `projection-registered`.
+  `reviewed` carries `actionFingerprint` (a 16-hex-digit hash of the reviewed arguments — never the
+  arguments themselves), and `action-changed` records the before/after hashes when an allow was refused
+  because the pending action moved under it. `selftest-summary` appears only when a self-test module was
+  configured: the package ships none, so with `selfTest` on and no `selftestModule` the log says
+  `selftest-unavailable` instead and reviews are unaffected.
 
 ## The audit card
 

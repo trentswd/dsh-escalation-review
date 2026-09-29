@@ -1,6 +1,9 @@
 # 依赖：插件是 link: 安装，运行时依赖在 ~/.dsh/profiles 下，不会出现在这里
 node_modules/
 
+# 临时目录：本地随手放的脚本与产物，不进版本库
+tmp-scripts/
+
 # 生成物：评审报告由 tools/review-report.mjs 产出（内容随运行变化）
 review-report.md
 *.log

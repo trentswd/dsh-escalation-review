@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zstdDecompressSync } from 'node:zlib'
 
 const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
@@ -252,6 +252,7 @@ function readEffectiveConfig() {
       if (typeof parsed.mode === 'string') merged.mode = parsed.mode
       if (Array.isArray(parsed.allowedHosts)) merged.allowedHosts = parsed.allowedHosts
       if (typeof parsed.policyExtra === 'string') merged.policyExtra = parsed.policyExtra
+      // legacy：老配置里的 policy 已收敛，按 report 显示
       files.push(file)
     } catch (error) {
       errors.push(`${file}: ${String(error?.message ?? error)}`)
@@ -465,22 +466,28 @@ function approvalsView(since) {
 }
 
 // ───────────────────────────────────────────── 入口
+// 导出视图函数：命令行入口之外，也让别处（例如自动化脚本）能直接拿到 Markdown 文本，
+// 而不必起子进程、也不必让本模块在 import 时就写文件。
+export { pluginView, approvalsView }
 
-const args = process.argv.slice(2)
-const sinceIndex = args.indexOf('--since')
-const since = sinceIndex >= 0 ? args[sinceIndex + 1] : undefined
-const mode = args.includes('--all-approvals') ? 'approvals' : 'plugin'
-const report = mode === 'approvals' ? approvalsView(since) : pluginView(since)
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
+  const args = process.argv.slice(2)
+  const sinceIndex = args.indexOf('--since')
+  const since = sinceIndex >= 0 ? args[sinceIndex + 1] : undefined
+  const mode = args.includes('--all-approvals') ? 'approvals' : 'plugin'
+  const report = mode === 'approvals' ? approvalsView(since) : pluginView(since)
 
-console.log(report)
-// 首选写到 $DSH_HOME；沙箱内写不进去时退回到插件目录旁的副本（工作区内，随时可打开）
-const fallback = join(fileURLToPath(new URL('..', import.meta.url)), 'review-report.md')
-for (const target of [REPORT_PATH, fallback]) {
-  try {
-    writeFileSync(target, report, 'utf8')
-    console.log(`\n（已写出 Markdown：${target}）`)
-    break
-  } catch (error) {
-    console.log(`\n（写出失败 ${target}：${String(error?.message ?? error)}）`)
+  console.log(report)
+  // 首选写到 $DSH_HOME；沙箱内写不进去时退回到插件目录旁的副本（工作区内，随时可打开）
+  const fallback = join(fileURLToPath(new URL('..', import.meta.url)), 'review-report.md')
+  for (const target of [REPORT_PATH, fallback]) {
+    try {
+      writeFileSync(target, report, 'utf8')
+      console.log(`\n（已写出 Markdown：${target}）`)
+      break
+    } catch (error) {
+      console.log(`\n（写出失败 ${target}：${String(error?.message ?? error)}）`)
+    }
   }
 }
