@@ -158,14 +158,20 @@ decides whether it may also check facts, and it ships **on**:
 
 `auto` and `always` are accepted as aliases for `on`, so older configurations keep working.
 
-This is one small loop, **not** a subagent: it runs in this process, opens no session, writes nothing, injects no
-workspace instructions, and cannot wander. When the model wants facts it asks for **all of them in one
-message** (`{"tools":[{"name":"read_file","path":"…"}, …]}`), the tools run **as one batch, in parallel**,
-every result comes back in a single round, and the second request must answer. So a review costs **one
-request** normally and **two** when it needs facts; the ceiling is two steps, "one tool per step" is impossible, and there is no third-round chit-chat.
+This is a bounded small loop, **not** a subagent: it runs in this process, opens no session, writes nothing, injects
+no workspace instructions, and cannot wander. **One step is the default path**: if the evidence suffices it answers
+immediately. When a fact is missing the model asks for **all of its tools in one message**
+(`{"tools":[{"name":"read_file","path":"…"}, …]}`), the tools run **as one batch, in parallel**, every result comes
+back in a single round, and the next request prefers to answer. So a review costs **one request** normally and
+**2–4** when it needs facts. The ceilings are independent and hard-coded (**4 steps / 3 batches / 8 tool calls /
+16KB per output / 48KB total**); "one tool per step" is impossible and there is no wandering — hitting any ceiling
+ends the loop with the evidence at hand, and no verdict means fail-closed.
 
-They see only what the review is allowed to see: the tools run **inside a read-only sandbox** and only the
-workspace plus the paths named in the pending action are readable, while credential paths are refused.
+They see only what the review is allowed to see: the tools run **inside a read-only sandbox** (the executor must
+advertise a sandbox mode, and the facts it reports back are checked), `read_file` is limited to paths the pending
+action itself names while `list_dir`/`stat` may also look at the workspace, and credential or secret paths
+(`.credentials*`, SSH keys, keychains, `.npmrc`, `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`) are refused. The
+**real target** (realpath) is re-validated after resolution, so symlinks and junctions cannot cross the boundary.
 
 | Tool | Reads | Bound |
 |---|---|---|

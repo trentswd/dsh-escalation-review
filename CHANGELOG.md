@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **The read-only verification loop is a bounded agent with a strong one-step bias** (was: a fixed two-step
+  protocol). One step remains the default path — if the evidence suffices the reviewer answers immediately —
+  but when a key fact is missing it may ask for another batch of read-only tools. Every ceiling is independent
+  and hard-coded: 4 steps, 3 tool batches, 8 tool calls, 16 KB per output, 48 KB total output. Hitting any of
+  them ends the loop with the evidence at hand, and no verdict is still fail-closed.
+- **Tool requests and verdicts now require exactly one JSON object** — no markdown fences, no surrounding
+  prose, no trailing data, and two JSON objects in one answer are rejected instead of "the first one wins".
+  Tool output is untrusted text, so a lenient extractor was a way to smuggle a verdict. Protocol errors throw a
+  retryable error again (they had silently become a normal failed result, which skipped the retry budget).
+- **A path reached through a symlink or junction can no longer cross the read boundary**: every read is
+  validated lexically, then re-validated against the **real target** (realpath identity) from the host
+  filesystem service, and anything that cannot be canonicalized is refused.
+- **Secret and credential files are refused by name**: `.env` and its variants, `*.pem`, `*.key`, `*.p12`,
+  `*.pfx`, `*.kdbx`, `*.ppk` join the existing list (SSH keys, `.npmrc`, `.git-credentials`, keychains,
+  browser profiles …).
+- **`read_file` is limited to files the pending action itself names**; `list_dir` and `stat` may still look at
+  the workspace because they return metadata only. Paths taken from free-form `justification` or `description`
+  text no longer widen the allowlist at all — free text can supply evidence, never capability.
+- **The shell fallback must prove it really sandboxed the command**: the executor has to advertise a sandbox
+  mode to be used at all, and after every run the facts it reports back are checked (present, read-only mode,
+  no `runnerFailed`, no denial). Anything else discards the output and marks the call failed, instead of
+  fabricating a `read-only` fact in the log from what we merely asked for.
+- **The final grant before `allowed-once` is bound to the live call object**: the one-shot approval answerer
+  re-checks the live pending action (not just the session record), and a late mismatch now follows `failMode`
+  (rejected under the default `deny`) instead of quietly turning into a human approval prompt.
+- **Action fingerprints cover the tool name as well as the arguments**, so "same arguments, different tool" is
+  no longer reported as "the action did not change".
+- The host-side local-facts layer (`collectLocalFacts`) is deleted: it read file metadata straight through the
+  process filesystem, and nothing ever consumed it (probe selection only reads the command text). Reading
+  metadata or content now happens only through the read-only tools, which run in the sandbox channel.
+
 - Prompt correctness, after an audit pass over the policy text: the retained-instruction restriction paragraph
   is whole again (it had been spliced into a fragment and cut off), the duplicated
   `"reason" is required` line and a dangling `happened.` sentence are gone, and the "rationale … why an allow
