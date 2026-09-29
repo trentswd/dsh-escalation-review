@@ -1,0 +1,63 @@
+{
+  "name": "dsh-escalation-review",
+  "version": "0.2.2",
+  "description": "Escalation-only LLM reviewer: reviews sandbox escapes only, keeps the sandbox, fails closed.",
+  "icon": "./icon.svg",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./config.json": "./config.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "locale/*.json",
+    "icon.svg",
+    "config.json",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-llm": ">=0.1.7-rc.2 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trentswd/dsh-escalation-review.git"
+  },
+  "author": "trentswd",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "escalation",
+    "review",
+    "approval",
+    "sandbox",
+    "codex-style"
+  ]
+}

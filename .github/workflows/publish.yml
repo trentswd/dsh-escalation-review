@@ -1,0 +1,40 @@
+name: publish
+
+# Publishes the package to npm with Trusted Publishing (OIDC) — no long-lived token
+# and no OTP prompt. Triggered by pushing a version tag such as `v0.2.2`.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # The tag must match the version in package.json, so a release cannot publish a
+      # version nobody tagged.
+      - name: Check tag against package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag v$tag does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      # npm CLI exchanges the workflow's OIDC identity for a short-lived credential;
+      # no NODE_AUTH_TOKEN is involved.
+      - name: Publish
+        run: npm publish --access public --provenance

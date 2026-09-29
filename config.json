@@ -1,0 +1,73 @@
+{
+  // ─────────────────────────────────────────────────────────────────────────────
+  // escalation-review 配置文件
+  //
+  // 优先级（低 → 高）：
+  //   1) 本文件（插件目录内的默认值）
+  //   2) ~/.dsh/escalation-review.config.json      ← 建议改这个，好找
+  //   3) cordis.patch.yml 里该插件条目的 config    ← 宿主侧/批处理代管时用
+  // 每次发生越界时重新读取，所以改完**即时生效，不需要重启 DSH**。
+  // 支持 `//` 与 `/* */` 注释（字符串内的注释符不会被误伤）。
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // observe = 只评审并记录，不干预（你照旧被问）；enforce = 按评审结果放行/拒绝。
+  // 注意：这一项现在是**调试项**，配置页默认不显示（想让它显示，就在 ~/.dsh/escalation-review.config.json 里写 "devMode": true）。
+  // 随包默认 enforce；但因为总开关 enabled 默认关，装着不动时插件仍然零介入。
+  // 想在接入前先观察，就把下面这行改成 "observe"。
+  "enabled": false,
+  "enabledText": "",
+  "mode": "enforce",
+
+  // true：第一次越界之后，用**伪造的待审动作**（假的 rm -rf、假的凭据上传…）跑一遍策略自检。
+  // 同一套 reviewer、同一策略、同一段真实上下文，但**绝不执行任何工具**，只记录判定。
+  // 想看"危险动作会不会被拒"时打开它，比真的冒险安全得多。
+  "selfTest": false,
+
+  // 评审超时三档：单次 30s / 总 100s / 间隔 5s → 3×30 + 2×5 = 100s，正好被总预算兜住
+  // 单次尝试上限：有了它，"本次超时"不再等于"预算花光"，所以超时**可以重试**
+  "attemptTimeoutMs": 30000,
+  // 两次尝试之间的等待（毫秒）
+  "retryDelayMs": 5000,
+  // 最小重试预算：扣掉等待后剩余不足这个数，就不白打一次注定失败的请求
+  "minAttemptMs": 2000,
+  // 整个评审的总预算（毫秒）。调用方在审批路径里等着，总等待必须有界
+  "timeoutMs": 100000,
+
+  // 评审失败/超时时怎么办：deny = 直接拒绝（对齐 Codex 的 strict 档）；ask = 交回人工
+  "failMode": "deny",
+
+  // 覆盖 reviewer 使用的模型；留空则跟随当前会话的 provider/model
+  // 例：想省钱可以用一个更便宜快的模型专做三分类
+  "provider": "",
+  "model": "",
+
+  // low 风险白名单主机：命中这些主机的常规网络操作按 low 处理；上传密钥/隐私数据仍按 high 拒绝。
+  // 按自己的需要增删即可。
+  "allowedHosts": [
+    "registry.npmjs.org",         // npm 官方源
+    "registry.npmmirror.com",     // 国内 npm 镜像
+    "github.com",                 // 代码托管
+    "codeload.github.com",
+    "api.github.com",
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "gitee.com",
+    "gitlab.com",
+    "bitbucket.org",
+    "gitcafe.com",
+    "gitgud.io",
+    "git.oschina.net"
+  ],
+
+  // 追加到固定策略末尾的自定义规则（自然语言，随便写）
+  "policyExtra": "",
+
+  // 评审日志（每次越界一行 JSON）。observe 模式下主要看这个
+  "logPath": "",
+
+  // 证据预算：只影响喂给 reviewer 的上下文大小
+  "historyLimit": 12,        // 保留的「用户指令」条数
+  "transcriptLimit": 40,     // transcript 事件条数
+  "textLimit": 900           // 单条文本截断长度
+}
+

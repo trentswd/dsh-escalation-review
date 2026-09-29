@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Escalation Review",
+    "description": "Reviews sandbox escapes only: the sandbox stays, failures deny, config applies live, denial reasons reach the model."
+  }
+}

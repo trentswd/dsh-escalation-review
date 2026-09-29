@@ -1,0 +1,11 @@
+# 本包被 dsh.profile.bundles 引用时应用的插入补丁。
+#
+# ⚠️ 必须是合法 YAML：注释只能用 `#`。曾经用 `//` 当注释 → 解析失败 →
+#    加载器把整个 bundle **静默跳过**（原因只写 stderr，GUI 应用看不到）→ 插件毫无痕迹地不工作。
+#
+# 说明（2026-09-27 更正）：entry 由**本 bundle 的 patch** 插入即可，不需要挪到 profile 的 patch 层。
+# 之前以为"设置页只对 profile patch 层创建的条目生成"是错的 —— 真正的门槛是**客户端半边**：
+# 官方 `plugins.bundle.config` / `plugins.item` 槽位由客户端插件注册，宿主 `Config` 只负责校验与落盘。
+- insert:
+    - id: escalation-review
+      name: dsh-escalation-review
