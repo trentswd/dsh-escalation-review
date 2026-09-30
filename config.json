@@ -92,7 +92,7 @@
   "policyExtra": "",
 
   // 只读探针的执行方式：inproc（默认，进程内、不 spawn）| shell（沙箱内只读命令）
-  "probeRunner": "inproc",
+  "probeRunner": "shell",
 
   // 评审思考强度（"off"/"minimal"/"low"/"medium"/"high"/"xhigh"/"max"）；留空跟随会话
   "reasoningEffort": "",

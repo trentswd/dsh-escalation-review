@@ -139,7 +139,7 @@ parse failure makes the loader skip the whole bundle silently.
 | `reviewConcurrency` | `1` | How many reviews may run at once (1–4). `1` keeps them strictly one after another; above the limit a call queues — nothing is dropped and the limit is never exceeded, and the queue time is charged against that review's total budget. |
 | `verifyMode` | `on` | Whether the reviewer may use read-only tools: `on` (default) or `off`. `auto` / `always` are accepted as aliases for `on`. See [Read-only tools during review](#read-only-tools-during-review). |
 | `verifyModeText` | `""` | Text form of `verifyMode` (`"off"` / `"on"`, plus the `auto` / `always` aliases); non-empty overrides `verifyMode`. |
-| `probeRunner` | `inproc` | Read-only probes: `inproc` (no process spawned) or `shell` (a read-only command inside the sandbox). |
+| `probeRunner` | `shell` | Read-only probes: `shell` (a read-only command in the pending action execution world; default) or `inproc` (filesystem-class probes only, and only when that world is provable). |
 | `policyExtra` | `""` | Rules you write yourself and append to the reviewer policy (the same explicit route as Codex's `auto_review.extra_policy`). This is the way to change how the reviewer judges. |
 | `allowedHosts` | `[]` | Hosts whose ordinary network access counts as low risk. An empty array in a user file **overrides** the package list, so write the full list if you write the key at all. |
 | `allowedHostsText` | `""` | Text form of `allowedHosts` (comma or newline separated) written by the config page; non-empty overrides `allowedHosts`. |

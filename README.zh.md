@@ -121,7 +121,7 @@ dsh plugin --profile <profile 名> add <包名或路径>
 | `reviewConcurrency` | `1` | 同时进行的评审上限（1–4）。`1`＝与从前一致、严格一个接一个；超过上限的调用**排队** —— 不丢弃、也绝不越过上限，排队时间会从这次评审的总预算里扣掉。 |
 | `verifyMode` | `on` | 评审时是否可用只读工具：`on`（默认）或 `off`；`auto` / `always` 作为 `on` 的别名继续接受。详见[评审时的只读工具](#评审时的只读工具)。 |
 | `verifyModeText` | `""` | `verifyMode` 的文本形态（`"off"` / `"on"`，也接受 `auto` / `always` 别名）；非空时覆盖 `verifyMode`。 |
-| `probeRunner` | `inproc` | 只读探针：`inproc`（不 spawn 进程）或 `shell`（沙箱内只读命令）。 |
+| `probeRunner` | `shell` | 只读探针：`shell`（在待审动作所在的世界里跑只读命令，默认）或 `inproc`（只跑 filesystem 类探针，且需可证明同世界）。 |
 | `policyExtra` | `""` | 你自己写的规则，追加到评审策略末尾（与 Codex 的 `auto_review.extra_policy` 同一种显式机制）。**想改评审口径就用它。** |
 | `allowedHosts` | `[]` | 命中这些主机的常规网络操作按 low 处理。注意：在用户配置里写空数组会**覆盖**包内清单，要写就写全量。 |
 | `allowedHostsText` | `""` | `allowedHosts` 的文本形态（逗号或换行分隔），由配置页写入；非空时覆盖 `allowedHosts`。 |
