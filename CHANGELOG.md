@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Timeouts are per round, not per loop.** A round is one model call plus the tool calls it asked for, and each
+  round gets its own `attemptTimeoutMs` slice (still capped by the total budget). Before this, a tool round's own
+  duration was charged against the call that had to produce the verdict — measured live: the first call took 7 s,
+  the tools 2 ms, and the verdict call was left 23 s of a 30 s attempt, so **every review that used a tool
+  aborted and failed closed**. Each model call now also logs its own duration (`review-call`), so "why did
+  reading one file take so long" has an answer in the log instead of a guess.
+- **The review card now appears as soon as the review starts.** It used to render only once the session
+  projection had an entry for the call, and the projection is recomputed on committed session events — of which
+  there are none while a review runs (a tool-using review left the card missing for its whole 100 s). The card is
+  now drawn from the escalation request itself while the call is in flight (only when the plugin's switch is on),
+  and it still disappears when the call ends without the plugin having reviewed it.
+- **A decided approval now updates the card.** `approval/decided` was not handled, so the card sat on
+  "待审批" until the tool finished; it now moves to 已批准 / 已拒绝 as soon as the outcome is known.
+
 - **The tool budgets are now per review, not per attempt.** The tool-call, tool-batch and total-output budgets
   live in one object created per review and are passed into every attempt, so a protocol retry no longer hands
   the model a fresh set of read allowances (three attempts used to allow 24 tool calls and 144 KiB of output,
