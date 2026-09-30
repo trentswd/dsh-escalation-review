@@ -164,14 +164,17 @@ immediately. When a fact is missing the model asks for **all of its tools in one
 (`{"tools":[{"name":"read_file","path":"…"}, …]}`), the tools run **as one batch, in parallel**, every result comes
 back in a single round, and the next request prefers to answer. So a review costs **one request** normally and
 **2–4** when it needs facts. The ceilings are independent and hard-coded (**4 steps / 3 batches / 8 tool calls /
-16KB per output / 48KB total**); "one tool per step" is impossible and there is no wandering — hitting any ceiling
-ends the loop with the evidence at hand, and no verdict means fail-closed.
+16KB per output / 48KB total / 1024 characters per path**). The tool-call, tool-batch and output budgets are
+shared by the whole review — retries do not reset them — while the step budget is per request. "One tool per
+step" is impossible and there is no wandering: hitting any ceiling ends the loop with the evidence at hand, and
+no verdict means fail-closed.
 
 They see only what the review is allowed to see: the tools run **inside a read-only sandbox** (the executor must
-advertise a sandbox mode, and the facts it reports back are checked), `read_file` is limited to paths the pending
-action itself names while `list_dir`/`stat` may also look at the workspace, and credential or secret paths
-(`.credentials*`, SSH keys, keychains, `.npmrc`, `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`) are refused. The
-**real target** (realpath) is re-validated after resolution, so symlinks and junctions cannot cross the boundary.
+advertise a sandbox mode, and the facts it reports back are checked), `read_file` is limited to the **exact file
+the pending action names** (compared as the DSH opaque target identity — no path parsing, no host-side
+case-folding), `list_dir`/`stat` containment is decided by the backend's own `fs.contains()`, and credential or
+secret paths (`.credentials*`, SSH keys, keychains, `.npmrc`, `.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`) are
+refused. Binary files, a missing `processPath`/`contains` capability, and anything unverifiable fail closed.
 
 | Tool | Reads | Bound |
 |---|---|---|

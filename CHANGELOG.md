@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **The tool budgets are now per review, not per attempt.** The tool-call, tool-batch and total-output budgets
+  live in one object created per review and are passed into every attempt, so a protocol retry no longer hands
+  the model a fresh set of read allowances (three attempts used to allow 24 tool calls and 144 KiB of output,
+  and that data had already reached the provider). The step budget stays per request.
+- **Action-path resolution shares one absolute deadline** instead of granting each candidate its own timeout:
+  a backend that ignores the abort signal can no longer turn "12 action roots" into 12 × 5 s of waiting.
+- **The filesystem seam is used the way DSH defines it.** A target's `targetKey` is treated strictly as an
+  opaque identity (exact string equality — never case-folded by host-OS rules, never parsed as a path),
+  directory containment goes through the backend's `fs.contains(parent, child)`, and the shell channel opens
+  files through `fs.processPath(target)` — never through the target key. A backend that cannot answer
+  `contains`/`processPath` fails closed.
+- **`read_file` no longer depends on reading a whole file**: it consumes `streamText` up to the cap (the
+  backend owns UTF-8 decoding and refuses binary files) or reads one `readByteRange` window, so a large file
+  yields a truncated prefix instead of `FS_TOO_LARGE` or a whole-file read.
+- **The shell fallback reads a bounded window** (`FileStream.Read` of 16 KiB + 1) instead of `Get-Content -Raw`,
+  so a huge target no longer gets pulled through the child process just because stdout was capped.
+- **A tool path is limited to 1024 characters** (protocol error above it), so a multi-megabyte path can no
+  longer enter the log or the next prompt while every byte cap stays green.
+- **Every approval settlement clears its one-shot entry** (allow, mismatch and hand-off alike), so no pending
+  machine-approval state survives a settlement.
+
 - **The bounded-loop ceilings are now real ceilings under concurrency.** The tool-call quota is reserved
   before a batch runs (previously 7 used calls plus a batch of 8 executed 15), and the total tool output is
   clamped to 48 KiB *before* it is fed back to the model, with an explicit omission marker for what was cut.
