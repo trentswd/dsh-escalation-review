@@ -126,7 +126,7 @@ dsh plugin --profile <profile 名> add <包名或路径>
 | `allowedHosts` | `[]` | 命中这些主机的常规网络操作按 low 处理。注意：在用户配置里写空数组会**覆盖**包内清单，要写就写全量。 |
 | `allowedHostsText` | `""` | `allowedHosts` 的文本形态（逗号或换行分隔），由配置页写入；非空时覆盖 `allowedHosts`。 |
 | `timeoutMs` | `100000` | 一次评审的总预算（含重试）。 |
-| `attemptTimeoutMs` | `30000` | 单次请求上限；超时后可以重试。 |
+| `attemptTimeoutMs` | `30000` | **每一轮**上限（1 次模型调用 + 该轮工具）；超时后可以重试，整次评审仍受 `timeoutMs` 约束。 |
 | `retryDelayMs` | `5000` | 两次尝试之间的等待。 |
 | `minAttemptMs` | `2000` | 扣掉等待后剩余预算低于此值就不再重试。 |
 

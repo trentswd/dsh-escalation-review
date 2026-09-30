@@ -144,7 +144,7 @@ parse failure makes the loader skip the whole bundle silently.
 | `allowedHosts` | `[]` | Hosts whose ordinary network access counts as low risk. An empty array in a user file **overrides** the package list, so write the full list if you write the key at all. |
 | `allowedHostsText` | `""` | Text form of `allowedHosts` (comma or newline separated) written by the config page; non-empty overrides `allowedHosts`. |
 | `timeoutMs` | `100000` | Total budget for one review, retries included. |
-| `attemptTimeoutMs` | `30000` | Cap for a single request; a timeout is retried. |
+| `attemptTimeoutMs` | `30000` | Cap for **one round** (one model call plus that round's tools); a round that times out is retried. The whole review stays bounded by `timeoutMs`. |
 | `retryDelayMs` | `5000` | Wait between attempts. |
 | `minAttemptMs` | `2000` | Skip a retry when the remaining budget after the delay is below this. |
 
