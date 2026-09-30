@@ -34,7 +34,24 @@ jobs:
             exit 1
           fi
 
+      # A version can never be published twice, so re-running this workflow — or pushing a
+      # tag whose version already shipped — must not turn into a red run. Check first and
+      # skip the publish step when the registry already has this exact version.
+      - name: Check whether this version is already published
+        id: registry
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          pkg="$(node -p "require('./package.json').version")"
+          if npm view "$name@$pkg" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$pkg is already published — nothing to publish."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+            echo "$name@$pkg is not published yet — publishing."
+          fi
+
       # npm CLI exchanges the workflow's OIDC identity for a short-lived credential;
       # no NODE_AUTH_TOKEN is involved.
       - name: Publish
+        if: steps.registry.outputs.already != 'true'
         run: npm publish --access public --provenance
