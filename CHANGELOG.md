@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-10-01
+
+First stable release. It closes four rounds of external review of the review loop and states its invariants
+explicitly:
+
+- **Bounded, one-step-biased review.** The reviewer answers immediately unless one concrete missing fact could
+  change the verdict. At most 4 steps, 3 tool batches, 8 tool calls, 16 KiB per output and 48 KiB per review;
+  the tool budgets are shared across retries and every round gets its own timeout, while the whole review stays
+  bounded by the total budget.
+- **Read-only, sandboxed verification.** Tools run only through a sandboxed `ctx.fs`/`ctx.shell` that advertises
+  its mode and whose reported facts are checked after the fact. Reads are bounded and refuse binary content.
+  The tool channel and the filesystem that decides identity, containment and subprocess paths are always taken
+  from the same scope, so the object that was checked is the object that is read.
+- **Opaque identity instead of paths.** `targetKey` is compared exactly, containment goes through the backend's
+  `fs.contains`, the shell opens files through `fs.processPath`, and a backend that cannot answer those fails
+  closed. A tool path is capped at 1024 characters.
+- **Facts must still be true when the action runs.** The filesystem observations a review relied on are
+  re-validated (identity, presence and the backend's freshness token) immediately before a machine approval;
+  anything that changed fails closed.
+- **Probes stay in their world.** In-process probes can only attest facts about the host, so they run only when
+  the backend proves host access; a remote or unknown world gets no probes rather than the wrong machine's.
+- **One-shot approvals.** The action fingerprint is re-checked against the live call and the session record, one
+  reviewer `allow` can produce at most one machine approval, and the review card appears while the review runs.
 
 - **Timeouts are per round, not per loop.** A round is one model call plus the tool calls it asked for, and each
   round gets its own `attemptTimeoutMs` slice (still capped by the total budget). Before this, a tool round's own
