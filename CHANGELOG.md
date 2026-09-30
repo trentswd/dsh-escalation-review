@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 — 2026-10-01
+
+Same content as 0.2.2, re-released under a new version number: the 0.2.0–0.2.2 versions were withdrawn from the
+registry before their replacement could be published, and a withdrawn name+version can never be reused.
 ## 0.2.2 — 2026-09-29
 
 - Releases publish directly from a version tag through Trusted Publishing (OIDC):

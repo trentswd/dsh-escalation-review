@@ -1,6 +1,6 @@
 {
   "name": "dsh-escalation-review",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Escalation-only LLM reviewer: reviews sandbox escapes only, keeps the sandbox, fails closed.",
   "icon": "./icon.svg",
   "type": "module",
