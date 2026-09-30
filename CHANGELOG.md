@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **The bounded-loop ceilings are now real ceilings under concurrency.** The tool-call quota is reserved
+  before a batch runs (previously 7 used calls plus a batch of 8 executed 15), and the total tool output is
+  clamped to 48 KiB *before* it is fed back to the model, with an explicit omission marker for what was cut.
+- **Every tool output passes one byte-based cap** (16 KiB per output, including `list_dir`), so invalid UTF-8
+  cannot inflate past the limit and no backend has to "approximately" bound itself.
+- **Filesystem tools are deadline-bounded.** The abort signal now reaches `resolve` / `stat` / `listDir` /
+  `readBytes`, and a host-side race guarantees the loop cannot hang on a backend that ignores it.
+- **`read_file` is limited to the exact file the pending action names** (compared as real-target identity)
+  instead of any file below a directory the action mentions; `list_dir` / `stat` keep root containment, and
+  the real target is still refused when it looks like a credential or secret file.
+- **The tool protocol is exact**: the answer must be `{"tools":[…]}` with entries carrying only `name` and
+  `path`, and more than 8 tools in one batch is a protocol error (retried) rather than a silent slice.
+- **The git remote probe no longer forwards credentials**: userinfo, query and fragment are stripped before
+  the URL can become reviewer evidence.
+- **Approval settles through one authoritative one-shot path.** The scoped fallback listener no longer
+  auto-approves (it only clears stale entries and hands the request on), the agent-scoped answerer is
+  one-shot even if removing the listener fails, and granting consumes the entry — so one reviewer `allow`
+  can produce at most one machine approval.
+- **Action fingerprints compare the full SHA-256 digest**; the short hash is only used in logs.
+
 - **The read-only verification loop is a bounded agent with a strong one-step bias** (was: a fixed two-step
   protocol). One step remains the default path — if the evidence suffices the reviewer answers immediately —
   but when a key fact is missing it may ask for another batch of read-only tools. Every ceiling is independent
