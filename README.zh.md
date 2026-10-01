@@ -8,6 +8,11 @@
 请求**离开**沙箱（`sandbox_permissions` 与当前生效模式不同）。这一次调用会被交给模型裁决 —— 放行、拒绝，
 或者交回给你 —— 并且走宿主本来就有的一套管路：把审批回答成 `allowed-once`，或在工具体执行前返回三态决策对象。
 
+卡片保留官方 session projection 和 `$gate` 策略条目；评审期间的实时相位同时通过 DSH 已认证的
+Connection Fetch 通道交付，因此无需等待下一条会话日志。可取消的长轮询只读取指定会话与调用，
+不单独监听端口。旧宿主缺少这个能力时仍使用投影，尚未收到事实时显示中性文案。
+评审理由保存在内存中，重启宿主后可能无法恢复。
+
 ## Codex 风格的评审器
 
 策略跟随 OpenAI 的 Codex guardian 模板（`codex-rs/prompts/templates/guardian/policy_template.md`），

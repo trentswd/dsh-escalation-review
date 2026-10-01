@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Read the official projection snapshot envelope without masking the keyed subscription.
+- Deliver live review phases through the authenticated Connection Fetch channel, scoped to each session and call.
+- Retain visible cards and reasons across delayed updates; distinguish observation, automatic answers, human handoff and cancellation.
+
 ## 1.0.0 — 2026-10-01
 
 First stable release. It closes four rounds of external review of the review loop and states its invariants

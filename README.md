@@ -10,6 +10,12 @@ sandbox (`sandbox_permissions` differs from the mode actually in effect). That o
 allow it, refuse it, or hand it back to you — delivered through the host's own plumbing: an approval
 answered as `allowed-once`, or a three-state decision object returned before the tool body runs.
 
+Review cards retain the official session projection and its `$gate` policy entry. Live review phases
+also travel over DSH's authenticated Connection Fetch channel, so a quiet session can display a review
+before its next log event. A cancellable long poll reads only the addressed session and call; it opens
+no separate listener. Older hosts without this capability retain the projection and neutral pending copy.
+Review reasons are held in memory and may be unavailable after a host restart.
+
 ## A Codex-style reviewer
 
 The policy follows OpenAI's Codex guardian template
