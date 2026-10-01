@@ -75,7 +75,7 @@ the reviewer covers the gap where DSH would otherwise stop to ask you.
 | Escalation, intervention switch off | Not reviewed, not touched, no model call. This is the default state. |
 | Escalation, switch **on** | Reviewed once and recorded. An allow answers the approval with `allowed-once` (you are **not** asked again); a deny blocks the body and returns the reason to the model. |
 | Review failed or timed out | `failMode` decides. Default `deny` (fail closed). |
-| Three denials in a row, or 10 within 50 calls | Circuit breaker: the plugin stops refusing and hands the call to you instead. |
+| Three denials in a row, or 10 within 50 calls | Circuit breaker: it stops refusing and hands the call to you instead — and it stays that way for the rest of that turn, so review failures and answerers registered before it tripped also go to you. A new turn starts clean; `observe` never intervenes. |
 | Pending action disagrees with its logged tool call | The review stops rather than judge evidence it cannot verify. |
 | Pending action changes after it was reviewed | Every allow is re-checked against a fingerprint frozen at review time; a mismatch fails closed (`failMode`) and is logged as `action-changed`, so the action that runs is always the action that was reviewed. |
 
@@ -105,7 +105,8 @@ plugin** → the absolute path of this directory, for example
 `dsh.profile.bundles`.
 
 ```sh
-dsh plugin --profile <profile-name> add <package-or-path>
+dsh plugin --profile <profile-name> add dsh-escalation-review        # from npm
+dsh plugin --profile <profile-name> add D:\path\to\plugins\escalation-review   # from a checkout
 ```
 
 - `~/.dsh/profiles/web` and `~/.dsh/profiles/desktop` are **independent**: installing into one leaves the
@@ -225,7 +226,7 @@ session history stays exactly as the host wrote it.
 
 **Failures close, and repeated denials break the loop.** Timeout, malformed JSON, a provider error or a
 failed cross-check end in `deny` by default; three denials in a row, or ten within fifty calls, trip the
-breaker and the call goes to you.
+breaker, and from then on every escalation in that turn goes to you.
 
 **Every decision is cross-checked** against the logged tool call, so a verdict is only issued on evidence
 the plugin can tie to the call it is about.
@@ -237,7 +238,10 @@ the plugin can tie to the call it is about.
   log line.
 - Read-only probes run in-process by default (nothing spawned). With `probeRunner: shell` they run as a
   read-only command inside the sandbox, roughly 650–700 ms each; the budget is at most 4 probes, 3 seconds
-  in total, 1.2 seconds each, 2 KB of output. Without `pwsh`, the in-process channel is used.
+  in total, 1.2 seconds each, 2 KB of output. A single probe is additionally capped by its own slice, so one
+  slow probe cannot consume the whole review. Each stage has the plugin's own deadline as well as the
+  caller's cancellation, and if the sandbox shell is unavailable the probes are reported as unavailable
+  rather than falling back to the host's own in-process channel.
 - Review log: `$DSH_HOME/escalation-review.log`, one JSON object per line. `tools/review-report.mjs`
   renders it plus the matching session context into Markdown. Key events: `ready`,
   `intervention-gate`, `config-effective`, `assembler-resolved`, `reviewed`, `reviewer-failed`,
@@ -251,16 +255,33 @@ the plugin can tie to the call it is about.
 
 ## The audit card
 
-An escalation appears in the transcript as a review card carrying the status (reviewing, awaiting
-approval, allowed, denied, executed with a tool error) and the reason. Clicking it expands the detail.
-Status colours come from the official theme tokens.
+An escalation appears in the transcript as a review card carrying the status and the reason. Clicking it
+expands the detail. The status follows what the host can actually prove about **that** call:
 
-Known limitation: an **allow** reason travels through an in-memory session projection, because approval
-outcomes have no reason field of their own. After a session is reloaded, older calls keep their status and
-lose that reason; new reviews are unaffected.
+| Status | When |
+|---|---|
+| Reviewing (`审批中`) | The plugin is deciding, and the host states that it will answer automatically. |
+| Observing (`评审中`) | `mode: observe` — the plugin reviews and records, but never answers. |
+| Awaiting a human (`待审批`) | The host states it will **not** answer automatically (`denyMode: ask`, a tripped breaker), or the plugin hands the call back. |
+| Escalation request | The call is escalation-shaped but the review is not confirmed yet — a neutral state, never a claim. |
+| Allowed (`已放行`) / Denied (`已拒绝`) | The verdict that was applied. |
+| Cancelled (`已取消`) / Approval unavailable (`审批不可用`) | The host cancelled the call, or the plugin could not answer it. |
+| Executed with a tool error (`已执行（工具报错）`) | The call was allowed and the tool itself failed. A human rejection is never rewritten as this. |
+
+Status colours come from the official theme tokens. A card that has a verdict entry for the call stays visible;
+a merely provisional one is retracted when the host reports that the switch is off or that the call is not an
+escalation.
+
+The card reads the host's per-call facts from the session projection **and** from an authenticated Connection
+Fetch route scoped to one session and one call — the projection is recomputed on committed session events, of
+which a review in flight produces none, so the live route carries the phase while the review runs.
+
+Known limitation: an **allow** reason travels in memory (the projection plus that live route), because approval
+outcomes have no reason field of their own. After a session is reloaded, older calls keep their status and lose
+that reason; new reviews are unaffected.
 
 Everything runs through documented extension points: `tools/pre-execute`, `approval/request`,
-`sessionProjections`, `conversation.chat.node`, `configForms`.
+`sessionProjections`, the Connection Fetch registry, `conversation.chat.node`, `configForms`.
 
 ## License
 

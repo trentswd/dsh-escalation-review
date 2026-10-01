@@ -1,15 +1,30 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-10-02
 
-- Read the official projection snapshot envelope without masking the keyed subscription.
-- Deliver live review phases through the authenticated Connection Fetch channel, scoped to each session and call.
-- Retain visible cards and reasons across delayed updates; distinguish observation, automatic answers, human handoff and cancellation.
+First stable release. It closes eight rounds of external review of the review loop and states its invariants
+explicitly. The later rounds (2026-10-02) hardened these areas:
 
-## 1.0.0 — 2026-10-01
+- Read the official projection snapshot envelope without masking the keyed subscription, and deliver live review
+  phases through an authenticated Connection Fetch channel scoped to one session and one call.
+- Retain visible cards and reasons across delayed updates, and distinguish reviewing, observing, awaiting a
+  human, allowed, denied, cancelled and unavailable. A human rejection is never rewritten as an execution
+  failure by the tool result that follows it.
+- Bound every probe stage with the plugin's own deadline and start it through a thunk, so an expired or
+  cancelled stage never starts and the rejection of an abandoned promise is always observed — an unhandled
+  rejection is a host-level failure, not a failed probe. Caller cancellation joins every stage, a handle that
+  arrives after the timeout is collected, and a single probe is capped by its own slice so one probe cannot
+  consume a whole review.
+- Keep verification in the action's own world: when the action has an owning context that cannot serve the
+  channel, the review proceeds without one instead of borrowing the plugin's scope.
+- Require both sides of a filesystem observation to carry the same freshness token, and exchange directory
+  listings as escaped JSON that is parsed strictly, so a filename cannot forge an entry and a failed
+  enumeration is never reported as an empty directory.
+- Scope the circuit breaker to the session and turn: once it trips it keeps handing every escalation to you
+  until the turn resets, including review failures and answerers that were registered before it tripped, while
+  `observe` never intervenes in the host's approval flow.
 
-First stable release. It closes four rounds of external review of the review loop and states its invariants
-explicitly:
+The invariants it states:
 
 - **Bounded, one-step-biased review.** The reviewer answers immediately unless one concrete missing fact could
   change the verdict. At most 4 steps, 3 tool batches, 8 tool calls, 16 KiB per output and 48 KiB per review;
