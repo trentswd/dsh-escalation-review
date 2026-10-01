@@ -75,7 +75,7 @@ the reviewer covers the gap where DSH would otherwise stop to ask you.
 | Escalation, intervention switch off | Not reviewed, not touched, no model call. This is the default state. |
 | Escalation, switch **on** | Reviewed once and recorded. An allow answers the approval with `allowed-once` (you are **not** asked again); a deny blocks the body and returns the reason to the model. |
 | Review failed or timed out | `failMode` decides. Default `deny` (fail closed). |
-| Three denials in a row, or 10 within 50 calls | Circuit breaker: it stops refusing and hands the call to you instead — and it stays that way for the rest of that turn, so review failures and answerers registered before it tripped also go to you. A new turn starts clean; `observe` never intervenes. |
+| Three deny verdicts in a row, or 10 within 50 calls | Circuit breaker: it stops refusing and hands the call to you instead — and it stays that way for the rest of that turn, so the review-failure exit and answerers registered before it tripped also go to you. Only verdicts **parsed as deny** advance the count (a failed review does not), and a call whose action changed or whose evidence no longer holds still follows `failMode`. A new turn starts clean; `observe` never intervenes. |
 | Pending action disagrees with its logged tool call | The review stops rather than judge evidence it cannot verify. |
 | Pending action changes after it was reviewed | Every allow is re-checked against a fingerprint frozen at review time; a mismatch fails closed (`failMode`) and is logged as `action-changed`, so the action that runs is always the action that was reviewed. |
 
@@ -225,8 +225,9 @@ command text and the verdict with its reason. Treat it as sensitive as the sessi
 session history stays exactly as the host wrote it.
 
 **Failures close, and repeated denials break the loop.** Timeout, malformed JSON, a provider error or a
-failed cross-check end in `deny` by default; three denials in a row, or ten within fifty calls, trip the
-breaker, and from then on every escalation in that turn goes to you.
+failed cross-check end in `deny` by default; three deny verdicts in a row, or ten within fifty calls, trip
+the breaker, and from then on every escalation in that turn goes to you. A failed review does not advance
+that count, and the action-changed and stale-evidence exits keep following `failMode`.
 
 **Every decision is cross-checked** against the logged tool call, so a verdict is only issued on evidence
 the plugin can tie to the call it is about.
@@ -236,12 +237,13 @@ the plugin can tie to the call it is about.
 - Internal packages resolve from the running app first (`app.asar/dsh`) and the profile second, so an app
   upgrade keeps the plugin on the app's own copies. The root used is recorded in the `assembler-resolved`
   log line.
-- Read-only probes run in-process by default (nothing spawned). With `probeRunner: shell` they run as a
-  read-only command inside the sandbox, roughly 650–700 ms each; the budget is at most 4 probes, 3 seconds
-  in total, 1.2 seconds each, 2 KB of output. A single probe is additionally capped by its own slice, so one
-  slow probe cannot consume the whole review. Each stage has the plugin's own deadline as well as the
-  caller's cancellation, and if the sandbox shell is unavailable the probes are reported as unavailable
-  rather than falling back to the host's own in-process channel.
+- Read-only probes run as a read-only command inside the sandbox by default (`probeRunner: shell`), roughly
+  650–700 ms each; `probeRunner: inproc` keeps them in-process instead (filesystem-class probes only, and
+  only when that world is provable). The budget is at most 4 probes, 3 seconds in total, 1.2 seconds each,
+  2 KB of output. A single probe is additionally capped by its own slice, so one slow probe cannot consume
+  the whole review. Each stage has the plugin's own deadline as well as the caller's cancellation, and if
+  the sandbox shell is unavailable the probes are reported as unavailable rather than falling back to the
+  host's own in-process channel.
 - Review log: `$DSH_HOME/escalation-review.log`, one JSON object per line. `tools/review-report.mjs`
   renders it plus the matching session context into Markdown. Key events: `ready`,
   `intervention-gate`, `config-effective`, `assembler-resolved`, `reviewed`, `reviewer-failed`,

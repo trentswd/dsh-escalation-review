@@ -21,8 +21,9 @@ explicitly. The later rounds (2026-10-02) hardened these areas:
   listings as escaped JSON that is parsed strictly, so a filename cannot forge an entry and a failed
   enumeration is never reported as an empty directory.
 - Scope the circuit breaker to the session and turn: once it trips it keeps handing every escalation to you
-  until the turn resets, including review failures and answerers that were registered before it tripped, while
-  `observe` never intervenes in the host's approval flow.
+  until the turn resets, including the review-failure exit and answerers that were registered before it
+  tripped, while `observe` never intervenes in the host's approval flow. Only verdicts parsed as deny advance
+  the count, and the action-changed and stale-evidence exits still follow `failMode`.
 
 The invariants it states:
 
